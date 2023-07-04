@@ -297,9 +297,9 @@ func TestTidbClusterStatusEquality(t *testing.T) {
 func TestSnitizeVersion(t *testing.T) {
 	g := NewGomegaWithT(t)
 	tests := []struct {
-		version  string
-		expected string
-		err      bool
+		version     string
+		expected    string
+		expectedErr bool
 	}{
 		{"v6.1.7-pre", "6.1.7", false},
 		{"v5.1.0-pre", "5.1.0", false},
@@ -319,7 +319,7 @@ func TestSnitizeVersion(t *testing.T) {
 
 	for _, test := range tests {
 		version, err := sanitizeVersion(test.version)
-		if test.err {
+		if test.expectedErr {
 			g.Expect(err).To(HaveOccurred())
 		} else {
 			g.Expect(err).NotTo(HaveOccurred())
@@ -331,10 +331,10 @@ func TestSnitizeVersion(t *testing.T) {
 func TestNeedToUpdateTiCDCFirst(t *testing.T) {
 	g := NewGomegaWithT(t)
 	tests := []struct {
-		name     string
-		version  string
-		expected bool
-		err      bool
+		name        string
+		version     string
+		expected    bool
+		expectedErr bool
 	}{
 		{
 			name:     "latest version",
@@ -357,20 +357,20 @@ func TestNeedToUpdateTiCDCFirst(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:    "unknown version should return error",
-			version: "test",
-			err:     true,
+			name:        "unknown version should return error",
+			version:     "test",
+			expectedErr: true,
 		},
 		{
-			name:    "invalid version should return error",
-			version: "v6.0",
-			err:     true,
+			name:        "invalid version should return error",
+			version:     "v6.0",
+			expectedErr: true,
 		},
 	}
 
 	for _, test := range tests {
 		version, err := needToUpdateTiCDCFirst(test.version)
-		if test.err {
+		if test.expectedErr {
 			g.Expect(err).To(HaveOccurred())
 		} else {
 			g.Expect(err).NotTo(HaveOccurred())
