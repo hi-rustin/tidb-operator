@@ -14,6 +14,11 @@
 package tidbcluster
 
 import (
+	"errors"
+	"regexp"
+	"strings"
+
+	"github.com/coreos/go-semver/semver"
 	v1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	errorutils "k8s.io/apimachinery/pkg/util/errors"
@@ -175,6 +180,25 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 		return err
 	}
 
+	ticdcVersion := tc.TiCDCVersion()
+	upgradeTiCDCFirst, err := c.needToUpdateTiCDCFirst(ticdcVersion)
+	if err != nil {
+		return err
+	}
+
+	// Upgrade TiCDC first if needed.
+	if upgradeTiCDCFirst {
+		// works that should be done to make the ticdc cluster current state match the desired state:
+		//   - waiting for the pd cluster available(pd cluster is in quorum)
+		//   - waiting for the tikv cluster available(at least one peer works)
+		//   - create or update ticdc deployment
+		//   - sync ticdc cluster status from pd to TidbCluster object
+		if err := c.ticdcMemberManager.Sync(tc); err != nil {
+			metrics.ClusterUpdateErrors.WithLabelValues(ns, tcName, "ticdc").Inc()
+			return err
+		}
+	}
+
 	// works that should be done to make the pd cluster current state match the desired state:
 	//   - create or update the pd service
 	//   - create or update the pd headless service
@@ -251,16 +275,17 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 		return err
 	}
 
-	// works that should be done to make the ticdc cluster current state match the desired state:
-	//   - waiting for the pd cluster available(pd cluster is in quorum)
-	//   - waiting for the tikv cluster available(at least one peer works)
-	//   - create or update ticdc deployment
-	//   - sync ticdc cluster status from pd to TidbCluster object
-	if err := c.ticdcMemberManager.Sync(tc); err != nil {
-		metrics.ClusterUpdateErrors.WithLabelValues(ns, tcName, "ticdc").Inc()
-		return err
+	if !upgradeTiCDCFirst {
+		// works that should be done to make the ticdc cluster current state match the desired state:
+		//   - waiting for the pd cluster available(pd cluster is in quorum)
+		//   - waiting for the tikv cluster available(at least one peer works)
+		//   - create or update ticdc deployment
+		//   - sync ticdc cluster status from pd to TidbCluster object
+		if err := c.ticdcMemberManager.Sync(tc); err != nil {
+			metrics.ClusterUpdateErrors.WithLabelValues(ns, tcName, "ticdc").Inc()
+			return err
+		}
 	}
-
 	// syncing the labels from Pod to PVC and PV, these labels include:
 	//   - label.StoreIDLabelKey
 	//   - label.MemberIDLabelKey
@@ -297,6 +322,37 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 		metrics.ClusterUpdateErrors.WithLabelValues(ns, tcName, "cluster_status").Inc()
 	}
 	return err
+}
+
+// needToUpdateTiCDCFirst checks if the TiCDC version is greater than or equal to v5.1.0.
+// If so, we need to update TiCDC first before updating other components.
+// See more: https://github.com/pingcap/tidb-operator/issues/4966#issuecomment-1606727165
+func (c *defaultTidbClusterControl) needToUpdateTiCDCFirst(ticdcVersion string) (bool, error) {
+	ver := &semver.Version{}
+	if err := ver.Set(sanitizeVersion(ticdcVersion)); err != nil {
+		return false, errors.New("ticdc version is invalid")
+	}
+
+	if ver.LessThan(*semver.New("5.1.0")) {
+		return false, nil
+	} else {
+		return true, nil
+	}
+}
+
+// versionHash is used to match the git hash suffix of the version string.
+// For example, the version string v3.0.0-rc.1-10-gd3f8e0a becomes v3.0.0-rc.1.
+var versionHash = regexp.MustCompile("-[0-9]+-g[0-9a-f]{7,}(-dev)?")
+
+// sanitizeVersion remove the prefix "v" and suffix git hash.
+// For example, the version string v3.0.0-rc.1-10-gd3f8e0a becomes 3.0.0-rc.1.
+func sanitizeVersion(v string) string {
+	if v == "" {
+		return v
+	}
+	v = versionHash.ReplaceAllLiteralString(v, "")
+	v = strings.TrimSuffix(v, "-dirty")
+	return strings.TrimPrefix(v, "v")
 }
 
 func (c *defaultTidbClusterControl) recordMetrics(tc *v1alpha1.TidbCluster) {
