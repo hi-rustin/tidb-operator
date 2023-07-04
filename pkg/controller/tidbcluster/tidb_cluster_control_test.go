@@ -299,14 +299,32 @@ func TestSnitizeVersion(t *testing.T) {
 	tests := []struct {
 		version  string
 		expected string
+		err      bool
 	}{
-		{"v6.1.7-pre", "6.1.7-pre"},
-		{"v7.2.0", "7.2.0"},
-		{"v6.1.3-20230517-5484207", "6.1.3-20230517-5484207"},
+		{"v6.1.7-pre", "6.1.7", false},
+		{"v5.1.0-pre", "5.1.0", false},
+		{"v7.2.0", "7.2.0", false},
+		{"v6.1.3-20230517-5484207", "6.1.3", false},
+		{"v7.1.0-rc.0", "7.1.0", false},
+		{"v7.1.0-rc.0-pre", "7.1.0", false},
+		{"v5.1.1-20211227", "5.1.1", false},
+		{"v6.4.0-20221102-1667358431", "6.4.0", false},
+		{"v5.1.0-nightly", "5.1.0", false},
+		{"v4.0.14-20211008", "4.0.14", false},
+		{"v4.0.13-20210610-ffbdae3", "4.0.13", false},
+		{"v5.0", "", true},
+		{"v5.0-nightly", "", true},
+		{"release-5.0", "", true},
 	}
 
 	for _, test := range tests {
-		g.Expect(sanitizeVersion(test.version)).To(Equal(test.expected))
+		version, err := sanitizeVersion(test.version)
+		if test.err {
+			g.Expect(err).To(HaveOccurred())
+		} else {
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(version).To(Equal(test.expected))
+		}
 	}
 }
 
@@ -316,23 +334,48 @@ func TestNeedToUpdateTiCDCFirst(t *testing.T) {
 		name     string
 		version  string
 		expected bool
+		err      bool
 	}{
 		{
-			name:     "no need to update TiCDC first",
+			name:     "latest version",
+			version:  "latest",
+			expected: true,
+		},
+		{
+			name:     "v4.0.0 no need to update TiCDC first",
 			version:  "v4.0.0",
 			expected: false,
 		},
 		{
-			name:     "need to update TiCDC first",
+			name:     "v6.0.0-rc.1 need to update TiCDC first",
 			version:  "v6.0.0-rc.1",
 			expected: true,
+		},
+		{
+			name:     "v5.1.0 need to update TiCDC first",
+			version:  "v5.1.0",
+			expected: true,
+		},
+		{
+			name:    "unknown version should return error",
+			version: "test",
+			err:     true,
+		},
+		{
+			name:    "invalid version should return error",
+			version: "v6.0",
+			err:     true,
 		},
 	}
 
 	for _, test := range tests {
 		version, err := needToUpdateTiCDCFirst(test.version)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(version).To(Equal(test.expected))
+		if test.err {
+			g.Expect(err).To(HaveOccurred())
+		} else {
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(version).To(Equal(test.expected))
+		}
 	}
 }
 

@@ -15,8 +15,8 @@ package tidbcluster
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
-	"strings"
 
 	"github.com/coreos/go-semver/semver"
 	v1 "k8s.io/api/core/v1"
@@ -328,31 +328,40 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 // If so, we need to update TiCDC first before updating other components.
 // See more: https://github.com/pingcap/tidb-operator/issues/4966#issuecomment-1606727165
 func needToUpdateTiCDCFirst(ticdcVersion string) (bool, error) {
+	// NOTE: 2023-07-04 is the date we add this check,
+	// so later versions should be greater than v5.1.0.
+	if ticdcVersion == "latest" {
+		return true, nil
+	}
 	ver := &semver.Version{}
-	if err := ver.Set(sanitizeVersion(ticdcVersion)); err != nil {
+	sanitizedVersion, err := sanitizeVersion(ticdcVersion)
+	if err != nil {
+		return false, err
+	}
+	if err := ver.Set(sanitizedVersion); err != nil {
 		return false, errors.New("ticdc version is invalid")
 	}
 
-	if ver.LessThan(*semver.New("5.1.0")) {
+	if ver.LessThan(*semver.New("5.1.0-alpha")) {
 		return false, nil
 	} else {
 		return true, nil
 	}
 }
 
-// versionHash is used to match the git hash suffix of the version string.
-// For example, the version string v3.0.0-rc.1-10-gd3f8e0a becomes v3.0.0-rc.1.
-var versionHash = regexp.MustCompile("-[0-9]+-g[0-9a-f]{7,}(-dev)?")
+// versionRe matches the version string like v7.2.0, v7.2.0-pre,
+// v6.1.3-20230517-5484207 and v5.1.1-20211227 to extract the version.
+// You can find all the version strings in https://hub.docker.com/r/pingcap/ticdc/tags.
+var versionRe = regexp.MustCompile(`v(\d+\.\d+\.\d+)(?:-\+)?`)
 
 // sanitizeVersion remove the prefix "v" and suffix git hash.
 // For example, the version string v3.0.0-rc.1-10-gd3f8e0a becomes 3.0.0-rc.1.
-func sanitizeVersion(v string) string {
-	if v == "" {
-		return v
+func sanitizeVersion(v string) (string, error) {
+	match := versionRe.FindStringSubmatch(v)
+	if len(match) > 1 {
+		return match[1], nil
 	}
-	v = versionHash.ReplaceAllLiteralString(v, "")
-	v = strings.TrimSuffix(v, "-dirty")
-	return strings.TrimPrefix(v, "v")
+	return "", fmt.Errorf("invalid version string: %s", v)
 }
 
 func (c *defaultTidbClusterControl) recordMetrics(tc *v1alpha1.TidbCluster) {
