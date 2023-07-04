@@ -294,6 +294,48 @@ func TestTidbClusterStatusEquality(t *testing.T) {
 	g.Expect(apiequality.Semantic.DeepEqual(&tcStatus, tcStatusCopy)).To(Equal(false))
 }
 
+func TestSnitizeVersion(t *testing.T) {
+	g := NewGomegaWithT(t)
+	tests := []struct {
+		version  string
+		expected string
+	}{
+		{"v6.1.7-pre", "6.1.7-pre"},
+		{"v7.2.0", "7.2.0"},
+		{"v6.1.3-20230517-5484207", "6.1.3-20230517-5484207"},
+	}
+
+	for _, test := range tests {
+		g.Expect(sanitizeVersion(test.version)).To(Equal(test.expected))
+	}
+}
+
+func TestNeedToUpdateTiCDCFirst(t *testing.T) {
+	g := NewGomegaWithT(t)
+	tests := []struct {
+		name     string
+		version  string
+		expected bool
+	}{
+		{
+			name:     "no need to update TiCDC first",
+			version:  "v4.0.0",
+			expected: false,
+		},
+		{
+			name:     "need to update TiCDC first",
+			version:  "v6.0.0-rc.1",
+			expected: true,
+		},
+	}
+
+	for _, test := range tests {
+		version, err := needToUpdateTiCDCFirst(test.version)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(version).To(Equal(test.expected))
+	}
+}
+
 func newFakeTidbClusterControl() (
 	ControlInterface,
 	*meta.FakeReclaimPolicyManager,

@@ -181,7 +181,7 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 	}
 
 	ticdcVersion := tc.TiCDCVersion()
-	upgradeTiCDCFirst, err := c.needToUpdateTiCDCFirst(ticdcVersion)
+	upgradeTiCDCFirst, err := needToUpdateTiCDCFirst(ticdcVersion)
 	if err != nil {
 		return err
 	}
@@ -327,7 +327,7 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 // needToUpdateTiCDCFirst checks if the TiCDC version is greater than or equal to v5.1.0.
 // If so, we need to update TiCDC first before updating other components.
 // See more: https://github.com/pingcap/tidb-operator/issues/4966#issuecomment-1606727165
-func (c *defaultTidbClusterControl) needToUpdateTiCDCFirst(ticdcVersion string) (bool, error) {
+func needToUpdateTiCDCFirst(ticdcVersion string) (bool, error) {
 	ver := &semver.Version{}
 	if err := ver.Set(sanitizeVersion(ticdcVersion)); err != nil {
 		return false, errors.New("ticdc version is invalid")
