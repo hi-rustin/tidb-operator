@@ -64,7 +64,9 @@ func NewDefaultTidbClusterControl(
 	discoveryManager member.TidbDiscoveryManager,
 	tidbClusterStatusManager manager.Manager,
 	conditionUpdater TidbClusterConditionUpdater,
-	recorder record.EventRecorder) ControlInterface {
+	recorder record.EventRecorder,
+	deps *controller.Dependencies,
+) ControlInterface {
 	return &defaultTidbClusterControl{
 		tcControl:                tcControl,
 		pdMemberManager:          pdMemberManager,
@@ -83,6 +85,7 @@ func NewDefaultTidbClusterControl(
 		tidbClusterStatusManager: tidbClusterStatusManager,
 		conditionUpdater:         conditionUpdater,
 		recorder:                 recorder,
+		deps:                     deps,
 	}
 }
 
@@ -104,6 +107,7 @@ type defaultTidbClusterControl struct {
 	tidbClusterStatusManager manager.Manager
 	conditionUpdater         TidbClusterConditionUpdater
 	recorder                 record.EventRecorder
+	deps                     *controller.Dependencies
 }
 
 // UpdateStatefulSet executes the core logic loop for a tidbcluster.
@@ -180,8 +184,8 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 		return err
 	}
 
-	ticdcVersion := tc.TiCDCVersion()
-	upgradeTiCDCFirst, err := needToUpdateTiCDCFirst(ticdcVersion)
+	oldTiCDCVersion := tc.TiCDCVersion()
+	upgradeTiCDCFirst, err := needToUpdateTiCDCFirst(oldTiCDCVersion)
 	if err != nil {
 		return err
 	}

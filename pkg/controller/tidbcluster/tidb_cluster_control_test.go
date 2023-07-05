@@ -392,6 +392,7 @@ func newFakeTidbClusterControl() (
 	cli := fake.NewSimpleClientset()
 	tcInformer := informers.NewSharedInformerFactory(cli, 0).Pingcap().V1alpha1().TidbClusters()
 	recorder := record.NewFakeRecorder(10)
+	fakeDeps := controller.NewFakeDependencies()
 
 	tcUpdater := controller.NewFakeTidbClusterControl(tcInformer)
 	pdMemberManager := mm.NewFakePDMemberManager()
@@ -426,6 +427,7 @@ func newFakeTidbClusterControl() (
 		statusManager,
 		&tidbClusterConditionUpdater{},
 		recorder,
+		fakeDeps,
 	)
 
 	return control, reclaimPolicyManager, orphanPodCleaner, pdMemberManager, tikvMemberManager, tidbMemberManager, metaManager, pvcCleaner, tcUpdater
