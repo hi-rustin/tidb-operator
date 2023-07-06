@@ -21,6 +21,7 @@ import (
 	"github.com/coreos/go-semver/semver"
 	v1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	errorutils "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
@@ -28,6 +29,7 @@ import (
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1"
 	"github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1/defaulting"
 	v1alpha1validation "github.com/pingcap/tidb-operator/pkg/apis/pingcap/v1alpha1/validation"
+	"github.com/pingcap/tidb-operator/pkg/apis/util"
 	"github.com/pingcap/tidb-operator/pkg/controller"
 	"github.com/pingcap/tidb-operator/pkg/features"
 	"github.com/pingcap/tidb-operator/pkg/manager"
@@ -184,10 +186,22 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 		return err
 	}
 
-	oldTiCDCVersion := tc.TiCDCVersion()
-	upgradeTiCDCFirst, err := needToUpdateTiCDCFirst(oldTiCDCVersion)
-	if err != nil {
-		return err
+	// Check if need to upgrade TiCDC first.
+	upgradeTiCDCFirst := false
+
+	oldSts, err := c.deps.StatefulSetLister.StatefulSets(ns).Get(controller.TiCDCMemberName(tcName))
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("updateTidbCluster: failed to get sts %s for cluster %s/%s, error: %s", controller.TiCDCMemberName(tcName), ns, tcName, err)
+	}
+	stsNotExist := apierrors.IsNotFound(err)
+	if !stsNotExist {
+		// Get TiCDC version from old sts.
+		ticdcImage := oldSts.Spec.Template.Spec.Containers[0].Image
+		oldTiCDCVersion := util.GetImageVersion(ticdcImage)
+		upgradeTiCDCFirst, err = needToUpdateTiCDCFirst(oldTiCDCVersion)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Upgrade TiCDC first if needed.
@@ -334,7 +348,7 @@ func (c *defaultTidbClusterControl) updateTidbCluster(tc *v1alpha1.TidbCluster) 
 func needToUpdateTiCDCFirst(ticdcVersion string) (bool, error) {
 	// NOTE: 2023-07-04 is the date we add this check,
 	// so later versions should be greater than v5.1.0.
-	if ticdcVersion == "latest" {
+	if ticdcVersion == util.VersionLatest {
 		return true, nil
 	}
 	ver := &semver.Version{}
